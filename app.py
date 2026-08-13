@@ -33,13 +33,13 @@ st.markdown("""
         margin-bottom: 20px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    div[data-baseweb="textarea"] {
+    div[data-baseweb="textarea"], div[data-baseweb="input"] {
         background-color: #1C1C22 !important;
         border: 1px solid #2C2C34 !important;
         border-radius: 14px !important;
         padding: 4px !important;
     }
-    div[data-baseweb="textarea"] textarea {
+    div[data-baseweb="textarea"] textarea, div[data-baseweb="input"] input {
         color: #FFFFFF !important;
         background-color: transparent !important;
         font-size: 15px !important;
@@ -104,6 +104,16 @@ def init_db():
             per_fat REAL
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            calories INTEGER,
+            protein REAL,
+            carbs REAL,
+            fat REAL
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -126,6 +136,31 @@ def save_prep(prep_input, servings, total_cals, total_protein, total_carbs, tota
         INSERT INTO prep_history (timestamp, prep_input, servings, total_cals, total_protein, total_carbs, total_fat, per_cals, per_protein, per_carbs, per_fat)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (now, prep_input, servings, total_cals, total_protein, total_carbs, total_fat, per_cals, per_protein, per_carbs, per_fat))
+    conn.commit()
+    conn.close()
+
+def save_favorite(name, cals, protein, carbs, fat):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        INSERT OR REPLACE INTO favorites (name, calories, protein, carbs, fat)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (name, cals, protein, carbs, fat))
+    conn.commit()
+    conn.close()
+
+def get_favorites():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('SELECT id, name, calories, protein, carbs, fat FROM favorites ORDER BY name ASC')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def delete_favorite(fav_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('DELETE FROM favorites WHERE id = ?', (fav_id,))
     conn.commit()
     conn.close()
 
@@ -213,7 +248,7 @@ def fetch_usda_macros(food_name):
 # --- UI Header & Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["⚡ Log Meal", "🥘 Meal Prep", "📋 Daily History"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚡ Log Meal", "🔍 Manual/Search", "⭐ Favorites", "🥘 Meal Prep", "📋 Daily History"])
 
 # --- TAB 1: Log Single Meal ---
 with tab1:
@@ -271,8 +306,92 @@ with tab1:
                 for line in breakdown_items:
                     st.info(line)
 
-# --- TAB 2: Batch Meal Prep ---
+# --- TAB 2: Manual Override & Food Search ---
 with tab2:
+    st.markdown('<div class="sub-title">Search USDA database or manually adjust macros</div>', unsafe_allow_html=True)
+    
+    search_query = st.text_input("Search USDA Food Database", placeholder="e.g. Chicken breast, Greek yogurt, White rice")
+    
+    # Initialize session state for pre-filling manual fields from search
+    if "manual_name" not in st.session_state: st.session_state.manual_name = ""
+    if "manual_cals" not in st.session_state: st.session_state.manual_cals = 0
+    if "manual_prot" not in st.session_state: st.session_state.manual_prot = 0.0
+    if "manual_carb" not in st.session_state: st.session_state.manual_carb = 0.0
+    if "manual_fat" not in st.session_state: st.session_state.manual_fat = 0.0
+
+    if st.button("🔍 Search Food", key="search_usda_btn"):
+        if search_query.strip():
+            with st.spinner("Searching USDA database..."):
+                usda_res = fetch_usda_macros(search_query)
+                if usda_res:
+                    st.session_state.manual_name = usda_res["name"]
+                    st.session_state.manual_cals = round(usda_res["calories"])
+                    st.session_state.manual_prot = round(usda_res["protein"], 1)
+                    st.session_state.manual_carb = round(usda_res["carbs"], 1)
+                    st.session_state.manual_fat = round(usda_res["fat"], 1)
+                    st.success(f"Loaded USDA values for per 100g of: {usda_res['name']}")
+                else:
+                    st.error("No USDA match found. Enter custom values manually below.")
+
+    st.markdown("---")
+    st.subheader("Manual / Override Entry")
+
+    man_name = st.text_input("Food Item Name", value=st.session_state.manual_name, placeholder="e.g. Protein Shake")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        man_cals = st.number_input("Calories", min_value=0, value=st.session_state.manual_cals, step=5)
+        man_prot = st.number_input("Protein (g)", min_value=0.0, value=st.session_state.manual_prot, step=1.0)
+    with col_b:
+        man_carb = st.number_input("Carbs (g)", min_value=0.0, value=st.session_state.manual_carb, step=1.0)
+        man_fat = st.number_input("Fat (g)", min_value=0.0, value=st.session_state.manual_fat, step=1.0)
+
+    btn_col1, btn_col2 = st.columns(2)
+    with btn_col1:
+        if st.button("➕ Log to Daily History", type="primary", key="save_manual_btn"):
+            if man_name.strip():
+                save_meal(man_name, man_cals, man_prot, man_carb, man_fat)
+                st.success(f"Logged {man_name} ({man_cals} kcal) to Daily History!")
+            else:
+                st.warning("Please provide a food item name.")
+
+    with btn_col2:
+        if st.button("⭐ Save to Favorites", key="fav_manual_btn"):
+            if man_name.strip():
+                save_favorite(man_name, man_cals, man_prot, man_carb, man_fat)
+                st.success(f"Saved {man_name} to Favorites!")
+            else:
+                st.warning("Please provide a food item name.")
+
+# --- TAB 3: Quick-Add / Favorites ---
+with tab3:
+    st.markdown('<div class="sub-title">Quick-log your saved favorite foods & meals</div>', unsafe_allow_html=True)
+    
+    fav_list = get_favorites()
+    
+    if not fav_list:
+        st.info("No favorites saved yet. Search or enter a item under 'Manual/Search' and click 'Save to Favorites'.")
+    else:
+        for fav in fav_list:
+            f_id, f_name, f_cals, f_prot, f_carb, f_fat = fav
+            with st.expander(f"⭐ {f_name} — {f_cals} kcal"):
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Calories", f"{f_cals}")
+                col2.metric("Protein", f"{f_prot:.0f}g")
+                col3.metric("Carbs", f"{f_carb:.0f}g")
+                col4.metric("Fats", f"{f_fat:.0f}g")
+
+                action_col1, action_col2 = st.columns([3, 1])
+                with action_col1:
+                    if st.button(f"⚡ Quick-Add '{f_name}'", key=f"quick_add_{f_id}"):
+                        save_meal(f_name, f_cals, f_prot, f_carb, f_fat)
+                        st.success(f"Logged 1x {f_name} to Daily History!")
+                with action_col2:
+                    if st.button("🗑️ Delete", key=f"del_fav_{f_id}"):
+                        delete_favorite(f_id)
+                        st.rerun()
+
+# --- TAB 4: Batch Meal Prep ---
+with tab4:
     st.markdown('<div class="sub-title">Calculate Batch Meal Prep & Portions</div>', unsafe_allow_html=True)
     
     prep_input = st.text_area(
@@ -370,8 +489,8 @@ with tab2:
             clear_prep_history()
             st.rerun()
 
-# --- TAB 3: Daily History ---
-with tab3:
+# --- TAB 5: Daily History ---
+with tab5:
     st.markdown('<div class="sub-title">Your Logged Meals</div>', unsafe_allow_html=True)
     
     history_records = get_history()
