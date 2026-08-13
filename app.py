@@ -5,7 +5,7 @@ import streamlit as st
 
 st.set_page_config(page_title="MacroSnap", page_icon="⚡", layout="centered")
 
-# --- Custom Fixed Mobile Layout & Hidden Streamlit UI ---
+# --- Custom Layout with Lifted Navigation Bar ---
 st.markdown("""
 <style>
     /* Lock viewport height and disable scrolling */
@@ -19,20 +19,10 @@ st.markdown("""
 
     /* Remove default Streamlit top/bottom padding */
     .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 0rem !important;
+        padding-top: 1.2rem !important;
+        padding-bottom: 5rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
-    }
-
-    /* Completely hide Streamlit cloud overlays & banners */
-    div[data-testid="stToolbar"],
-    div[data-testid="stDecoration"],
-    div[data-testid="stStatusWidget"],
-    #MainMenu, footer, header {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0px !important;
     }
     
     /* Title & Subtitle Styling */
@@ -97,18 +87,18 @@ st.markdown("""
         margin-bottom: 4px;
     }
 
-    /* Fixed Bottom Navigation Bar */
+    /* Bottom Navigation Bar positioned above Streamlit footer banner */
     .bottom-nav {
         position: fixed;
-        bottom: 0;
+        bottom: 40px; /* Lifted up above Streamlit banner */
         left: 0;
         width: 100%;
         background-color: #16161B;
         border-top: 1px solid #26262D;
         display: flex;
         justify-content: space-around;
-        padding: 8px 0 12px 0;
-        z-index: 999999;
+        padding: 8px 0;
+        z-index: 9999;
     }
     .nav-item {
         text-align: center;
@@ -241,7 +231,7 @@ for ex in examples:
         st.session_state["meal_text"] = ex
         st.rerun()
 
-# Bottom Mobile Navigation Bar
+# Bottom Navigation Bar
 st.markdown("""
 <div class="bottom-nav">
     <div class="nav-item active">
