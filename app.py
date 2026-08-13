@@ -7,7 +7,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="MacroSnap", page_icon="⚡", layout="centered")
 
-# --- Custom Dark Theme & CSS ---
+# --- Custom Dark Theme & Compact CSS ---
 st.markdown("""
 <style>
     .stApp {
@@ -15,13 +15,13 @@ st.markdown("""
         color: #FFFFFF;
     }
     .block-container {
-        padding-top: 3rem !important;
-        padding-bottom: 3rem !important;
-        padding-left: 1.2rem !important;
-        padding-right: 1.2rem !important;
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
     }
     .main-title {
-        font-size: 32px;
+        font-size: 28px;
         font-weight: 800;
         margin-bottom: 2px;
         color: #FFFFFF;
@@ -29,8 +29,8 @@ st.markdown("""
     }
     .sub-title {
         color: #8E8E93;
-        font-size: 15px;
-        margin-bottom: 20px;
+        font-size: 14px;
+        margin-bottom: 16px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     div[data-baseweb="textarea"], div[data-baseweb="input"] {
@@ -167,10 +167,17 @@ def ask_gemini_to_parse(text_entry):
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     prompt = f"""
     Analyze this food entry: "{text_entry}"
-    Extract each ingredient, its numeric quantity, and unit.
+    Extract each ingredient and convert all quantities (including counts, teaspoons, tablespoons, cups, ounces) into estimated total weight in GRAMS (g) or milliliters (ml).
+    
+    Examples:
+    - "2 eggs" -> quantity: 100, unit: "g" (approx 50g per large egg)
+    - "2tsp chili oil" -> quantity: 10, unit: "g" (approx 5g per tsp)
+    - "1 tbsp olive oil" -> quantity: 14, unit: "g"
+    - "50g feta cheese" -> quantity: 50, unit: "g"
+    
     Return strictly as JSON matching this format:
     {{
-      "ingredients": [{{"name": "oats", "quantity": 100, "unit": "g"}}]
+      "ingredients": [{{"name": "chili oil", "quantity": 10, "unit": "g"}}]
     }}
     Do not add backticks or code markdown blocks.
     """
@@ -208,10 +215,10 @@ def fetch_usda_macros(food_name):
         pass
     return None
 
-# --- UI Header & Tabs ---
+# --- UI Header & Shortened Mobile Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs(["⚡ Log Meal", "🔍 Manual/Search", "⭐ Favorites", "🥘 Meal Prep"])
+tab1, tab2, tab3, tab4 = st.tabs(["⚡ Log", "🔍 Search", "⭐ Favs", "🥘 Prep"])
 
 # --- TAB 1: Log Single Meal ---
 with tab1:
@@ -219,7 +226,7 @@ with tab1:
     
     meal_input = st.text_area(
         label="Describe what you ate", 
-        placeholder="e.g. 2 eggs, toast with butter, orange juice...", 
+        placeholder="e.g. 2 eggs, 20g spinach, 2tsp chili oil, 50g feta cheese...", 
         height=100,
         label_visibility="collapsed"
     )
@@ -242,7 +249,8 @@ with tab1:
                     
                     usda_data = fetch_usda_macros(name)
                     if usda_data:
-                        multiplier = qty / 100.0 if unit.lower() == 'g' else 1.0
+                        # Since Gemini normalizes all non-gram inputs into estimated grams, scale against USDA 100g base
+                        multiplier = qty / 100.0
                         cals = round(usda_data["calories"] * multiplier)
                         prot = round(usda_data["protein"] * multiplier, 1)
                         carb = round(usda_data["carbs"] * multiplier, 1)
@@ -253,7 +261,7 @@ with tab1:
                         total_carbs += carb
                         total_fat += fat
 
-                        breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
+                        breakdown_items.append(f"**{usda_data['name']}** (~{qty:.0f}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
 
                 st.success("Meal analyzed successfully!")
                 col1, col2, col3, col4 = st.columns(4)
@@ -319,7 +327,7 @@ with tab3:
     fav_list = get_favorites()
     
     if not fav_list:
-        st.info("No favorites saved yet. Search or enter an item under 'Manual/Search' and click 'Save to Favorites'.")
+        st.info("No favorites saved yet. Search or enter an item under 'Search' and click 'Save to Favorites'.")
     else:
         for fav in fav_list:
             f_id, f_name, f_cals, f_prot, f_carb, f_fat = fav
@@ -364,7 +372,7 @@ with tab4:
                     
                     usda_data = fetch_usda_macros(name)
                     if usda_data:
-                        multiplier = qty / 100.0 if unit.lower() == 'g' else 1.0
+                        multiplier = qty / 100.0
                         cals = round(usda_data["calories"] * multiplier)
                         prot = round(usda_data["protein"] * multiplier, 1)
                         carb = round(usda_data["carbs"] * multiplier, 1)
