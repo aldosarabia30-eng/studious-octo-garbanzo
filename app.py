@@ -78,17 +78,6 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
-        CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            meal_input TEXT,
-            calories INTEGER,
-            protein REAL,
-            carbs REAL,
-            fat REAL
-        )
-    ''')
-    c.execute('''
         CREATE TABLE IF NOT EXISTS prep_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT,
@@ -114,17 +103,6 @@ def init_db():
             fat REAL
         )
     ''')
-    conn.commit()
-    conn.close()
-
-def save_meal(meal_input, cals, protein, carbs, fat):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    c.execute('''
-        INSERT INTO history (timestamp, meal_input, calories, protein, carbs, fat)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (now, meal_input, cals, protein, carbs, fat))
     conn.commit()
     conn.close()
 
@@ -164,14 +142,6 @@ def delete_favorite(fav_id):
     conn.commit()
     conn.close()
 
-def get_history():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('SELECT timestamp, meal_input, calories, protein, carbs, fat FROM history ORDER BY id DESC')
-    rows = c.fetchall()
-    conn.close()
-    return rows
-
 def get_prep_history():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -179,13 +149,6 @@ def get_prep_history():
     rows = c.fetchall()
     conn.close()
     return rows
-
-def clear_history():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute('DELETE FROM history')
-    conn.commit()
-    conn.close()
 
 def clear_prep_history():
     conn = sqlite3.connect(DB_FILE)
@@ -248,7 +211,7 @@ def fetch_usda_macros(food_name):
 # --- UI Header & Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["⚡ Log Meal", "🔍 Manual/Search", "⭐ Favorites", "🥘 Meal Prep", "📋 Daily History"])
+tab1, tab2, tab3, tab4 = st.tabs(["⚡ Log Meal", "🔍 Manual/Search", "⭐ Favorites", "🥘 Meal Prep"])
 
 # --- TAB 1: Log Single Meal ---
 with tab1:
@@ -261,7 +224,7 @@ with tab1:
         label_visibility="collapsed"
     )
 
-    if st.button("⚡ Analyze & Save", type="primary", key="single_meal_btn"):
+    if st.button("⚡ Analyze Macros", type="primary", key="single_meal_btn"):
         if meal_input.strip():
             with st.spinner("Calculating macros..."):
                 parsed_data = ask_gemini_to_parse(meal_input)
@@ -292,9 +255,7 @@ with tab1:
 
                         breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
 
-                save_meal(meal_input, total_cals, total_protein, total_carbs, total_fat)
-
-                st.success("Meal analyzed & saved to history!")
+                st.success("Meal analyzed successfully!")
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Calories", f"{total_cals}")
                 col2.metric("Protein", f"{total_protein:.0f}g")
@@ -308,11 +269,10 @@ with tab1:
 
 # --- TAB 2: Manual Override & Food Search ---
 with tab2:
-    st.markdown('<div class="sub-title">Search USDA database or manually adjust macros</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Search USDA database or manually look up macros</div>', unsafe_allow_html=True)
     
     search_query = st.text_input("Search USDA Food Database", placeholder="e.g. Chicken breast, Greek yogurt, White rice")
     
-    # Initialize session state for pre-filling manual fields from search
     if "manual_name" not in st.session_state: st.session_state.manual_name = ""
     if "manual_cals" not in st.session_state: st.session_state.manual_cals = 0
     if "manual_prot" not in st.session_state: st.session_state.manual_prot = 0.0
@@ -334,7 +294,7 @@ with tab2:
                     st.error("No USDA match found. Enter custom values manually below.")
 
     st.markdown("---")
-    st.subheader("Manual / Override Entry")
+    st.subheader("Manual / Custom Values")
 
     man_name = st.text_input("Food Item Name", value=st.session_state.manual_name, placeholder="e.g. Protein Shake")
     col_a, col_b = st.columns(2)
@@ -345,31 +305,21 @@ with tab2:
         man_carb = st.number_input("Carbs (g)", min_value=0.0, value=st.session_state.manual_carb, step=1.0)
         man_fat = st.number_input("Fat (g)", min_value=0.0, value=st.session_state.manual_fat, step=1.0)
 
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1:
-        if st.button("➕ Log to Daily History", type="primary", key="save_manual_btn"):
-            if man_name.strip():
-                save_meal(man_name, man_cals, man_prot, man_carb, man_fat)
-                st.success(f"Logged {man_name} ({man_cals} kcal) to Daily History!")
-            else:
-                st.warning("Please provide a food item name.")
+    if st.button("⭐ Save to Favorites", key="fav_manual_btn"):
+        if man_name.strip():
+            save_favorite(man_name, man_cals, man_prot, man_carb, man_fat)
+            st.success(f"Saved {man_name} to Favorites!")
+        else:
+            st.warning("Please provide a food item name.")
 
-    with btn_col2:
-        if st.button("⭐ Save to Favorites", key="fav_manual_btn"):
-            if man_name.strip():
-                save_favorite(man_name, man_cals, man_prot, man_carb, man_fat)
-                st.success(f"Saved {man_name} to Favorites!")
-            else:
-                st.warning("Please provide a food item name.")
-
-# --- TAB 3: Quick-Add / Favorites ---
+# --- TAB 3: Favorites ---
 with tab3:
-    st.markdown('<div class="sub-title">Quick-log your saved favorite foods & meals</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Your saved favorite foods & macros</div>', unsafe_allow_html=True)
     
     fav_list = get_favorites()
     
     if not fav_list:
-        st.info("No favorites saved yet. Search or enter a item under 'Manual/Search' and click 'Save to Favorites'.")
+        st.info("No favorites saved yet. Search or enter an item under 'Manual/Search' and click 'Save to Favorites'.")
     else:
         for fav in fav_list:
             f_id, f_name, f_cals, f_prot, f_carb, f_fat = fav
@@ -380,15 +330,9 @@ with tab3:
                 col3.metric("Carbs", f"{f_carb:.0f}g")
                 col4.metric("Fats", f"{f_fat:.0f}g")
 
-                action_col1, action_col2 = st.columns([3, 1])
-                with action_col1:
-                    if st.button(f"⚡ Quick-Add '{f_name}'", key=f"quick_add_{f_id}"):
-                        save_meal(f_name, f_cals, f_prot, f_carb, f_fat)
-                        st.success(f"Logged 1x {f_name} to Daily History!")
-                with action_col2:
-                    if st.button("🗑️ Delete", key=f"del_fav_{f_id}"):
-                        delete_favorite(f_id)
-                        st.rerun()
+                if st.button("🗑️ Delete Favorite", key=f"del_fav_{f_id}"):
+                    delete_favorite(f_id)
+                    st.rerun()
 
 # --- TAB 4: Batch Meal Prep ---
 with tab4:
@@ -481,34 +425,6 @@ with tab4:
                 b_c.metric("Batch Carbs", f"{t_carb:.0f}g")
                 b_d.metric("Batch Fats", f"{t_fat:.0f}g")
 
-                if st.button(f"Log 1 Portion to Daily Log", key=f"log_prep_{record[0]}"):
-                    save_meal(f"Meal Prep Portion ({input_text[:25]}...)", p_cals, p_prot, p_carb, p_fat)
-                    st.success("Added 1 portion to Daily History!")
-
         if st.button("Clear Meal Prep History", key="clear_prep_hist_btn"):
             clear_prep_history()
-            st.rerun()
-
-# --- TAB 5: Daily History ---
-with tab5:
-    st.markdown('<div class="sub-title">Your Logged Meals</div>', unsafe_allow_html=True)
-    
-    history_records = get_history()
-    
-    if not history_records:
-        st.info("No meals logged yet.")
-    else:
-        for record in history_records:
-            timestamp, meal_text, cals, prot, carb, fat = record
-            with st.expander(f"🕒 {timestamp} — {cals} kcal"):
-                st.write(f"**Meal:** {meal_text}")
-                col_a, col_b, col_c, col_d = st.columns(4)
-                col_a.metric("Calories", f"{cals}")
-                col_b.metric("Protein", f"{prot:.0f}g")
-                col_c.metric("Carbs", f"{carb:.0f}g")
-                col_d.metric("Fats", f"{fat:.0f}g")
-
-        st.markdown("---")
-        if st.button("Clear Daily History", key="clear_hist_btn"):
-            clear_history()
             st.rerun()
