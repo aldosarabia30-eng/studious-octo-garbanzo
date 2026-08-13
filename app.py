@@ -3,8 +3,127 @@ import json
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="MacroSnap", page_icon="🔥", layout="centered")
+st.set_page_config(page_title="MacroSnap", page_icon="⚡", layout="centered")
 
+# --- Custom Dark Theme CSS matching your screenshot ---
+st.markdown("""
+<style>
+    /* Dark background for the whole page */
+    .stApp {
+        background-color: #0E0E11;
+        color: #FFFFFF;
+    }
+    
+    /* Title & Subtitle Styling */
+    .main-title {
+        font-size: 32px;
+        font-weight: 800;
+        margin-bottom: 0px;
+        color: #FFFFFF;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .sub-title {
+        color: #8E8E93;
+        font-size: 16px;
+        margin-bottom: 24px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .section-label {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #6E6E73;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+    }
+
+    /* Input Box Wrapper Card */
+    div[data-baseweb="textarea"] {
+        background-color: #1C1C22 !important;
+        border: 1px solid #2C2C34 !important;
+        border-radius: 16px !important;
+        padding: 8px !important;
+    }
+    div[data-baseweb="textarea"] textarea {
+        color: #FFFFFF !important;
+        background-color: transparent !important;
+        font-size: 15px !important;
+    }
+
+    /* Analyze Button */
+    div.stButton > button {
+        width: 100%;
+        background-color: #272730;
+        color: #FFFFFF;
+        border: 1px solid #3A3A46;
+        border-radius: 12px;
+        padding: 12px 20px;
+        font-size: 16px;
+        font-weight: 600;
+        margin-top: 10px;
+        transition: all 0.2s ease-in-out;
+    }
+    div.stButton > button:hover {
+        background-color: #32323E;
+        border-color: #4A4A5A;
+        color: #FFFFFF;
+    }
+
+    /* Example Item Buttons */
+    div[data-testid="column"] button {
+        background-color: #1C1C22;
+        color: #E5E5EA;
+        border: 1px solid #2C2C34;
+        border-radius: 12px;
+        text-align: left;
+        padding: 12px 16px;
+        font-size: 14px;
+        font-weight: 400;
+        margin-bottom: 8px;
+    }
+    div[data-testid="column"] button:hover {
+        background-color: #272730;
+        border-color: #3A3A46;
+        color: #FFFFFF;
+    }
+
+    /* Bottom Navigation Bar */
+    .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: #16161B;
+        border-top: 1px solid #26262D;
+        display: flex;
+        justify-content: space-around;
+        padding: 10px 0;
+        z-index: 9999;
+    }
+    .nav-item {
+        text-align: center;
+        color: #6E6E73;
+        font-size: 11px;
+        text-decoration: none;
+    }
+    .nav-item.active {
+        color: #FF6200;
+    }
+    .nav-icon {
+        font-size: 18px;
+        display: block;
+        margin-bottom: 2px;
+    }
+    
+    /* Hide Streamlit default chrome header/footer */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# API Keys setup
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
 USDA_KEY = os.getenv("USDA_API_KEY", "DEMO_KEY")
 
@@ -53,18 +172,31 @@ def fetch_usda_macros(food_name):
         pass
     return None
 
-st.title("🔥 MacroSnap Dashboard")
-st.caption("AI-Powered Macro Parsing + USDA Database")
+# --- UI Layout ---
+st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Describe what you ate</div>', unsafe_allow_html=True)
 
-meal_input = st.text_area("What did you eat?", placeholder="e.g., 100g oats, 2 large eggs...")
+# Session state to hold text when clicking example chips
+if "meal_text" not in st.session_state:
+    st.session_state["meal_text"] = ""
 
-if st.button("Analyze & Log Macros", type="primary"):
+# Input Box
+meal_input = st.text_area(
+    label="Describe what you ate", 
+    value=st.session_state["meal_text"],
+    placeholder="e.g. 2 eggs, toast with butter, orange juice...", 
+    height=120,
+    label_visibility="collapsed"
+)
+
+# Main Action Button
+if st.button("⚡ Analyze", type="primary"):
     if meal_input.strip():
-        with st.spinner("AI is calculating macro distributions..."):
+        with st.spinner("Calculating macros..."):
             parsed_data = ask_gemini_to_parse(meal_input)
             
         if not parsed_data or "ingredients" not in parsed_data:
-            st.error("Failed to parse data. Verify your Gemini API Key configuration.")
+            st.error("Failed to parse data. Check your API configuration.")
         else:
             total_cals, total_protein, total_carbs, total_fat = 0, 0.0, 0.0, 0.0
             breakdown_items = []
@@ -87,9 +219,9 @@ if st.button("Analyze & Log Macros", type="primary"):
                     total_carbs += carb
                     total_fat += fat
 
-                    breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n🔥 {cals} kcal | 🍖 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
+                    breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
 
-            st.success("Meal analysis completed successfully!")
+            st.success("Meal parsed successfully!")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Calories", f"{total_cals} kcal")
             col2.metric("Protein", f"{total_protein:.1f}g")
@@ -99,3 +231,39 @@ if st.button("Analyze & Log Macros", type="primary"):
             st.subheader("Itemized Breakdown")
             for line in breakdown_items:
                 st.info(line)
+
+# Example Chips Section
+st.markdown('<div class="section-label">TRY AN EXAMPLE</div>', unsafe_allow_html=True)
+
+examples = [
+    "2 eggs, 2 slices whole wheat toast, 1 tbsp butter",
+    "Grilled chicken breast 150g with brown rice 200g",
+    "Greek yogurt 200g with honey and granola",
+    "Oats 80g with milk 200ml and banana"
+]
+
+for ex in examples:
+    if st.button(ex, key=ex):
+        st.session_state["meal_text"] = ex
+        st.rerun()
+
+# Spacer for bottom navigation bar
+st.markdown("<br><br><br>", unsafe_allow_html=True)
+
+# Bottom Mobile Navigation Bar
+st.markdown("""
+<div class="bottom-nav">
+    <div class="nav-item active">
+        <span class="nav-icon">⚡</span>
+        Log
+    </div>
+    <div class="nav-item">
+        <span class="nav-icon">📋</span>
+        History
+    </div>
+    <div class="nav-item">
+        <span class="nav-icon">📊</span>
+        Weekly
+    </div>
+</div>
+""", unsafe_allow_html=True)
