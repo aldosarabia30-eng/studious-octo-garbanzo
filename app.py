@@ -77,6 +77,7 @@ DB_FILE = "meals.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Table for individual daily meals
     c.execute('''
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +87,23 @@ def init_db():
             protein REAL,
             carbs REAL,
             fat REAL
+        )
+    ''')
+    # Table for batch meal preps
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS prep_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            prep_input TEXT,
+            servings INTEGER,
+            total_cals INTEGER,
+            total_protein REAL,
+            total_carbs REAL,
+            total_fat REAL,
+            per_cals INTEGER,
+            per_protein REAL,
+            per_carbs REAL,
+            per_fat REAL
         )
     ''')
     conn.commit()
@@ -102,6 +120,17 @@ def save_meal(meal_input, cals, protein, carbs, fat):
     conn.commit()
     conn.close()
 
+def save_prep(prep_input, servings, total_cals, total_protein, total_carbs, total_fat, per_cals, per_protein, per_carbs, per_fat):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    c.execute('''
+        INSERT INTO prep_history (timestamp, prep_input, servings, total_cals, total_protein, total_carbs, total_fat, per_cals, per_protein, per_carbs, per_fat)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (now, prep_input, servings, total_cals, total_protein, total_carbs, total_fat, per_cals, per_protein, per_carbs, per_fat))
+    conn.commit()
+    conn.close()
+
 def get_history():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -110,10 +139,25 @@ def get_history():
     conn.close()
     return rows
 
+def get_prep_history():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('SELECT timestamp, prep_input, servings, total_cals, total_protein, total_carbs, total_fat, per_cals, per_protein, per_carbs, per_fat FROM prep_history ORDER BY id DESC')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
 def clear_history():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('DELETE FROM history')
+    conn.commit()
+    conn.close()
+
+def clear_prep_history():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('DELETE FROM prep_history')
     conn.commit()
     conn.close()
 
@@ -171,7 +215,7 @@ def fetch_usda_macros(food_name):
 # --- UI Header & Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["⚡ Log Meal", "🥘 Meal Prep", "📋 History"])
+tab1, tab2, tab3 = st.tabs(["⚡ Log Meal", "🥘 Meal Prep", "📋 Daily History"])
 
 # --- TAB 1: Log Single Meal ---
 with tab1:
@@ -230,9 +274,6 @@ with tab1:
                     st.info(line)
 
 # --- TAB 2: Batch Meal Prep ---
-with tab3:
-    pass # Defined below properly
-
 with tab2:
     st.markdown('<div class="sub-title">Calculate Batch Meal Prep & Portions</div>', unsafe_allow_html=True)
     
@@ -245,7 +286,7 @@ with tab2:
 
     servings = st.number_input("Number of Portions / Days", min_value=1, max_value=20, value=5, step=1)
 
-    if st.button("🥘 Calculate Bulk Prep", type="primary", key="batch_meal_btn"):
+    if st.button("🥘 Calculate & Save Bulk Prep", type="primary", key="batch_meal_btn"):
         if prep_input.strip():
             with st.spinner("Parsing bulk ingredients..."):
                 parsed_data = ask_gemini_to_parse(prep_input)
@@ -254,7 +295,6 @@ with tab2:
                 st.error("Failed to parse batch data. Check API keys.")
             else:
                 batch_cals, batch_protein, batch_carbs, batch_fat = 0, 0.0, 0.0, 0.0
-                breakdown_items = []
 
                 for item in parsed_data["ingredients"]:
                     name = item.get("name", "Unknown")
@@ -274,13 +314,16 @@ with tab2:
                         batch_carbs += carb
                         batch_fat += fat
 
-                        breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
-
                 # Per Portion Calculations
                 per_serving_cals = round(batch_cals / servings)
                 per_serving_prot = batch_protein / servings
                 per_serving_carb = batch_carbs / servings
                 per_serving_fat = batch_fat / servings
+
+                # Save Meal Prep to Prep DB
+                save_prep(prep_input, servings, batch_cals, batch_protein, batch_carbs, batch_fat, per_serving_cals, per_serving_prot, per_serving_carb, per_serving_fat)
+
+                st.success("Meal prep saved to history!")
 
                 st.markdown("### 🍽️ Per Serving (1 of " + str(servings) + " Portions)")
                 col1, col2, col3, col4 = st.columns(4)
@@ -297,12 +340,42 @@ with tab2:
                 b_col3.metric("Total Carbs", f"{batch_carbs:.0f}g")
                 b_col4.metric("Total Fat", f"{batch_fat:.0f}g")
 
-                # Option to log single portion to history
-                if st.button("Save 1 Portion to Daily History", key="save_prep_portion"):
-                    save_meal(f"Meal Prep Portion (1/{servings}): {prep_input[:30]}...", per_serving_cals, per_serving_prot, per_serving_carb, per_serving_fat)
-                    st.success("Portion saved to history log!")
+    st.markdown("---")
+    st.markdown("### 📜 Saved Meal Preps")
+    prep_records = get_prep_history()
 
-# --- TAB 3: History ---
+    if not prep_records:
+        st.info("No meal preps saved yet.")
+    else:
+        for record in prep_records:
+            timestamp, input_text, serv, t_cals, t_prot, t_carb, t_fat, p_cals, p_prot, p_carb, p_fat = record
+            with st.expander(f"🥘 {timestamp} — {serv} Servings ({p_cals} kcal/portion)"):
+                st.write(f"**Ingredients:** {input_text}")
+                
+                st.write("**Per Serving:**")
+                col_a, col_b, col_c, col_d = st.columns(4)
+                col_a.metric("Calories", f"{p_cals}")
+                col_b.metric("Protein", f"{p_prot:.0f}g")
+                col_c.metric("Carbs", f"{p_carb:.0f}g")
+                col_d.metric("Fats", f"{p_fat:.0f}g")
+
+                st.write("**Full Batch:**")
+                b_a, b_b, b_c, b_d = st.columns(4)
+                b_a.metric("Batch Cals", f"{t_cals}")
+                b_b.metric("Batch Prot", f"{t_prot:.0f}g")
+                b_c.metric("Batch Carbs", f"{t_carb:.0f}g")
+                b_d.metric("Batch Fats", f"{t_fat:.0f}g")
+
+                # Quick button to log one portion of this prep into daily history
+                if st.button(f"Log 1 Portion to Daily Log", key=f"log_prep_{record[0]}"):
+                    save_meal(f"Meal Prep Portion ({input_text[:25]}...)", p_cals, p_prot, p_carb, p_fat)
+                    st.success("Added 1 portion to Daily History!")
+
+        if st.button("Clear Meal Prep History", key="clear_prep_hist_btn"):
+            clear_prep_history()
+            st.rerun()
+
+# --- TAB 3: Daily History ---
 with tab3:
     st.markdown('<div class="sub-title">Your Logged Meals</div>', unsafe_allow_html=True)
     
@@ -322,6 +395,6 @@ with tab3:
                 col_d.metric("Fats", f"{fat:.0f}g")
 
         st.markdown("---")
-        if st.button("Clear All History", key="clear_hist_btn"):
+        if st.button("Clear Daily History", key="clear_hist_btn"):
             clear_history()
             st.rerun()
