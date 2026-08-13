@@ -3,9 +3,9 @@ import io
 import json
 import sqlite3
 import requests
+import zxingcpp
 import streamlit as st
 from PIL import Image
-from pyzbar.pyzbar import decode
 from datetime import datetime
 
 st.set_page_config(page_title="MacroSnap", page_icon="⚡", layout="centered")
@@ -215,9 +215,9 @@ def fetch_usda_macros(food_name):
 
 def scan_barcode_from_image(image_bytes):
     img = Image.open(io.BytesIO(image_bytes))
-    decoded_objects = decode(img)
-    if decoded_objects:
-        return decoded_objects[0].data.decode('utf-8')
+    results = zxingcpp.read_barcodes(img)
+    if results:
+        return results[0].text
     return None
 
 def fetch_product_by_barcode(barcode):
