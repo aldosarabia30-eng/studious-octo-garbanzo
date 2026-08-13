@@ -1,55 +1,38 @@
 import os
 import json
+import sqlite3
 import requests
 import streamlit as st
+from datetime import datetime
 
 st.set_page_config(page_title="MacroSnap", page_icon="⚡", layout="centered")
 
-# --- Custom Layout with Lifted Navigation Bar ---
+# --- Custom Dark Theme & CSS ---
 st.markdown("""
 <style>
-    /* Lock viewport height and disable scrolling */
-    html, body, [data-testid="stAppViewContainer"], .main {
-        height: 100vh !important;
-        max-height: 100vh !important;
-        overflow: hidden !important;
+    .stApp {
         background-color: #0E0E11;
         color: #FFFFFF;
     }
-
-    /* Remove default Streamlit top/bottom padding */
     .block-container {
-        padding-top: 1.2rem !important;
-        padding-bottom: 5rem !important;
-        padding-left: 1rem !important;
-        padding-right: 1rem !important;
+        padding-top: 3rem !important;
+        padding-bottom: 3rem !important;
+        padding-left: 1.2rem !important;
+        padding-right: 1.2rem !important;
     }
-    
-    /* Title & Subtitle Styling */
     .main-title {
-        font-size: 28px;
+        font-size: 32px;
         font-weight: 800;
-        margin-bottom: 0px;
+        margin-bottom: 2px;
         color: #FFFFFF;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     .sub-title {
         color: #8E8E93;
-        font-size: 14px;
-        margin-bottom: 12px;
+        font-size: 15px;
+        margin-bottom: 20px;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    .section-label {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 1px;
-        color: #6E6E73;
-        margin-top: 12px;
-        margin-bottom: 8px;
-        text-transform: uppercase;
-    }
-
-    /* Text Area Styling */
     div[data-baseweb="textarea"] {
         background-color: #1C1C22 !important;
         border: 1px solid #2C2C34 !important;
@@ -59,65 +42,84 @@ st.markdown("""
     div[data-baseweb="textarea"] textarea {
         color: #FFFFFF !important;
         background-color: transparent !important;
-        font-size: 14px !important;
+        font-size: 15px !important;
     }
-
-    /* Analyze Button */
     div.stButton > button {
         width: 100%;
         background-color: #272730;
         color: #FFFFFF;
         border: 1px solid #3A3A46;
         border-radius: 12px;
-        padding: 10px 16px;
-        font-size: 15px;
+        padding: 12px 16px;
+        font-size: 16px;
         font-weight: 600;
-        margin-top: 6px;
+        margin-top: 8px;
+        margin-bottom: 16px;
     }
-
-    /* Example Chips */
-    div[data-testid="column"] button {
-        background-color: #1C1C22;
-        color: #E5E5EA;
-        border: 1px solid #2C2C34;
-        border-radius: 10px;
-        text-align: left;
-        padding: 8px 12px;
-        font-size: 13px;
-        margin-bottom: 4px;
+    div.stButton > button:hover {
+        background-color: #32323E;
+        color: #FFFFFF;
     }
-
-    /* Bottom Navigation Bar positioned above Streamlit footer banner */
-    .bottom-nav {
-        position: fixed;
-        bottom: 40px; /* Lifted up above Streamlit banner */
-        left: 0;
-        width: 100%;
-        background-color: #16161B;
-        border-top: 1px solid #26262D;
-        display: flex;
-        justify-content: space-around;
-        padding: 8px 0;
-        z-index: 9999;
+    div[data-testid="stMetricValue"] {
+        font-size: 22px !important;
+        color: #FFFFFF !important;
     }
-    .nav-item {
-        text-align: center;
-        color: #6E6E73;
-        font-size: 11px;
-        text-decoration: none;
-    }
-    .nav-item.active {
-        color: #FF6200;
-    }
-    .nav-icon {
-        font-size: 18px;
-        display: block;
-        margin-bottom: 2px;
+    div[data-testid="stMetricLabel"] {
+        font-size: 12px !important;
+        color: #8E8E93 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# API Keys setup
+# --- SQLite Database Helper Functions ---
+DB_FILE = "meals.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            meal_input TEXT,
+            calories INTEGER,
+            protein REAL,
+            carbs REAL,
+            fat REAL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def save_meal(meal_input, cals, protein, carbs, fat):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    c.execute('''
+        INSERT INTO history (timestamp, meal_input, calories, protein, carbs, fat)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (now, meal_input, cals, protein, carbs, fat))
+    conn.commit()
+    conn.close()
+
+def get_history():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('SELECT timestamp, meal_input, calories, protein, carbs, fat FROM history ORDER BY id DESC')
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def clear_history():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('DELETE FROM history')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+# --- API Keys setup ---
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
 USDA_KEY = os.getenv("USDA_API_KEY", "DEMO_KEY")
 
@@ -166,85 +168,88 @@ def fetch_usda_macros(food_name):
         pass
     return None
 
-# --- UI Layout ---
+# --- UI Header & Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Describe what you ate</div>', unsafe_allow_html=True)
 
-if "meal_text" not in st.session_state:
-    st.session_state["meal_text"] = ""
+tab1, tab2 = st.tabs(["⚡ Log Meal", "📋 History"])
 
-meal_input = st.text_area(
-    label="Describe what you ate", 
-    value=st.session_state["meal_text"],
-    placeholder="e.g. 2 eggs, toast with butter, orange juice...", 
-    height=90,
-    label_visibility="collapsed"
-)
+# --- TAB 1: Log Meal ---
+with tab1:
+    st.markdown('<div class="sub-title">Describe what you ate</div>', unsafe_allow_html=True)
+    
+    meal_input = st.text_area(
+        label="Describe what you ate", 
+        placeholder="e.g. 2 eggs, toast with butter, orange juice...", 
+        height=100,
+        label_visibility="collapsed"
+    )
 
-if st.button("⚡ Analyze", type="primary"):
-    if meal_input.strip():
-        with st.spinner("Calculating macros..."):
-            parsed_data = ask_gemini_to_parse(meal_input)
-            
-        if not parsed_data or "ingredients" not in parsed_data:
-            st.error("Failed to parse data. Check API keys.")
-        else:
-            total_cals, total_protein, total_carbs, total_fat = 0, 0.0, 0.0, 0.0
-            breakdown_items = []
-
-            for item in parsed_data["ingredients"]:
-                name = item.get("name", "Unknown")
-                qty = item.get("quantity", 1.0)
-                unit = item.get("unit", "g")
+    if st.button("⚡ Analyze & Save", type="primary"):
+        if meal_input.strip():
+            with st.spinner("Calculating macros..."):
+                parsed_data = ask_gemini_to_parse(meal_input)
                 
-                usda_data = fetch_usda_macros(name)
-                if usda_data:
-                    multiplier = qty / 100.0 if unit.lower() == 'g' else 1.0
-                    cals = round(usda_data["calories"] * multiplier)
-                    prot = round(usda_data["protein"] * multiplier, 1)
-                    carb = round(usda_data["carbs"] * multiplier, 1)
-                    fat = round(usda_data["fat"] * multiplier, 1)
+            if not parsed_data or "ingredients" not in parsed_data:
+                st.error("Failed to parse data. Check API keys.")
+            else:
+                total_cals, total_protein, total_carbs, total_fat = 0, 0.0, 0.0, 0.0
+                breakdown_items = []
 
-                    total_cals += cals
-                    total_protein += prot
-                    total_carbs += carb
-                    total_fat += fat
+                for item in parsed_data["ingredients"]:
+                    name = item.get("name", "Unknown")
+                    qty = item.get("quantity", 1.0)
+                    unit = item.get("unit", "g")
+                    
+                    usda_data = fetch_usda_macros(name)
+                    if usda_data:
+                        multiplier = qty / 100.0 if unit.lower() == 'g' else 1.0
+                        cals = round(usda_data["calories"] * multiplier)
+                        prot = round(usda_data["protein"] * multiplier, 1)
+                        carb = round(usda_data["carbs"] * multiplier, 1)
+                        fat = round(usda_data["fat"] * multiplier, 1)
 
-                    breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
+                        total_cals += cals
+                        total_protein += prot
+                        total_carbs += carb
+                        total_fat += fat
 
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Cals", f"{total_cals}")
-            col2.metric("Protein", f"{total_protein:.0f}g")
-            col3.metric("Carbs", f"{total_carbs:.0f}g")
-            col4.metric("Fats", f"{total_fat:.0f}g")
+                        breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
 
-st.markdown('<div class="section-label">TRY AN EXAMPLE</div>', unsafe_allow_html=True)
+                # Save to SQLite Database
+                save_meal(meal_input, total_cals, total_protein, total_carbs, total_fat)
 
-examples = [
-    "2 eggs, 2 slices whole wheat toast, 1 tbsp butter",
-    "Grilled chicken breast 150g with brown rice 200g",
-    "Greek yogurt 200g with honey and granola"
-]
+                st.success("Meal analyzed & saved to history!")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Calories", f"{total_cals}")
+                col2.metric("Protein", f"{total_protein:.0f}g")
+                col3.metric("Carbs", f"{total_carbs:.0f}g")
+                col4.metric("Fats", f"{total_fat:.0f}g")
 
-for ex in examples:
-    if st.button(ex, key=ex):
-        st.session_state["meal_text"] = ex
-        st.rerun()
+                st.markdown("---")
+                st.subheader("Itemized Breakdown")
+                for line in breakdown_items:
+                    st.info(line)
 
-# Bottom Navigation Bar
-st.markdown("""
-<div class="bottom-nav">
-    <div class="nav-item active">
-        <span class="nav-icon">⚡</span>
-        Log
-    </div>
-    <div class="nav-item">
-        <span class="nav-icon">📋</span>
-        History
-    </div>
-    <div class="nav-item">
-        <span class="nav-icon">📊</span>
-        Weekly
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# --- TAB 2: History ---
+with tab2:
+    st.markdown('<div class="sub-title">Your Logged Meals</div>', unsafe_allow_html=True)
+    
+    history_records = get_history()
+    
+    if not history_records:
+        st.info("No meals logged yet.")
+    else:
+        for record in history_records:
+            timestamp, meal_text, cals, prot, carb, fat = record
+            with st.expander(f"🕒 {timestamp} — {cals} kcal"):
+                st.write(f"**Meal:** {meal_text}")
+                col_a, col_b, col_c, col_d = st.columns(4)
+                col_a.metric("Calories", f"{cals}")
+                col_b.metric("Protein", f"{prot:.0f}g")
+                col_c.metric("Carbs", f"{carb:.0f}g")
+                col_d.metric("Fats", f"{fat:.0f}g")
+
+        st.markdown("---")
+        if st.button("Clear All History"):
+            clear_history()
+            st.rerun()
