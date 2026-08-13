@@ -171,9 +171,9 @@ def fetch_usda_macros(food_name):
 # --- UI Header & Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["⚡ Log Meal", "📋 History"])
+tab1, tab2, tab3 = st.tabs(["⚡ Log Meal", "🥘 Meal Prep", "📋 History"])
 
-# --- TAB 1: Log Meal ---
+# --- TAB 1: Log Single Meal ---
 with tab1:
     st.markdown('<div class="sub-title">Describe what you ate</div>', unsafe_allow_html=True)
     
@@ -184,7 +184,7 @@ with tab1:
         label_visibility="collapsed"
     )
 
-    if st.button("⚡ Analyze & Save", type="primary"):
+    if st.button("⚡ Analyze & Save", type="primary", key="single_meal_btn"):
         if meal_input.strip():
             with st.spinner("Calculating macros..."):
                 parsed_data = ask_gemini_to_parse(meal_input)
@@ -215,7 +215,6 @@ with tab1:
 
                         breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
 
-                # Save to SQLite Database
                 save_meal(meal_input, total_cals, total_protein, total_carbs, total_fat)
 
                 st.success("Meal analyzed & saved to history!")
@@ -230,8 +229,81 @@ with tab1:
                 for line in breakdown_items:
                     st.info(line)
 
-# --- TAB 2: History ---
+# --- TAB 2: Batch Meal Prep ---
+with tab3:
+    pass # Defined below properly
+
 with tab2:
+    st.markdown('<div class="sub-title">Calculate Batch Meal Prep & Portions</div>', unsafe_allow_html=True)
+    
+    prep_input = st.text_area(
+        label="Enter total cooked batch ingredients", 
+        placeholder="e.g. 1000g chicken breast, 500g brown rice, 300g broccoli, 30g olive oil...", 
+        height=110,
+        key="prep_input_box"
+    )
+
+    servings = st.number_input("Number of Portions / Days", min_value=1, max_value=20, value=5, step=1)
+
+    if st.button("🥘 Calculate Bulk Prep", type="primary", key="batch_meal_btn"):
+        if prep_input.strip():
+            with st.spinner("Parsing bulk ingredients..."):
+                parsed_data = ask_gemini_to_parse(prep_input)
+                
+            if not parsed_data or "ingredients" not in parsed_data:
+                st.error("Failed to parse batch data. Check API keys.")
+            else:
+                batch_cals, batch_protein, batch_carbs, batch_fat = 0, 0.0, 0.0, 0.0
+                breakdown_items = []
+
+                for item in parsed_data["ingredients"]:
+                    name = item.get("name", "Unknown")
+                    qty = item.get("quantity", 1.0)
+                    unit = item.get("unit", "g")
+                    
+                    usda_data = fetch_usda_macros(name)
+                    if usda_data:
+                        multiplier = qty / 100.0 if unit.lower() == 'g' else 1.0
+                        cals = round(usda_data["calories"] * multiplier)
+                        prot = round(usda_data["protein"] * multiplier, 1)
+                        carb = round(usda_data["carbs"] * multiplier, 1)
+                        fat = round(usda_data["fat"] * multiplier, 1)
+
+                        batch_cals += cals
+                        batch_protein += prot
+                        batch_carbs += carb
+                        batch_fat += fat
+
+                        breakdown_items.append(f"**{usda_data['name']}** ({qty}{unit})  \n⚡ {cals} kcal | 🥩 P: {prot}g | 🍞 C: {carb}g | 🥑 F: {fat}g")
+
+                # Per Portion Calculations
+                per_serving_cals = round(batch_cals / servings)
+                per_serving_prot = batch_protein / servings
+                per_serving_carb = batch_carbs / servings
+                per_serving_fat = batch_fat / servings
+
+                st.markdown("### 🍽️ Per Serving (1 of " + str(servings) + " Portions)")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("Calories", f"{per_serving_cals}")
+                col2.metric("Protein", f"{per_serving_prot:.0f}g")
+                col3.metric("Carbs", f"{per_serving_carb:.0f}g")
+                col4.metric("Fats", f"{per_serving_fat:.0f}g")
+
+                st.markdown("---")
+                st.markdown("### 📦 Total Batch Macros")
+                b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+                b_col1.metric("Total Cals", f"{batch_cals}")
+                b_col2.metric("Total Prot", f"{batch_protein:.0f}g")
+                b_col3.metric("Total Carbs", f"{batch_carbs:.0f}g")
+                b_col4.metric("Total Fat", f"{batch_fat:.0f}g")
+
+                # Option to log single portion to history
+                if st.button("Save 1 Portion to Daily History", key="save_prep_portion"):
+                    save_meal(f"Meal Prep Portion (1/{servings}): {prep_input[:30]}...", per_serving_cals, per_serving_prot, per_serving_carb, per_serving_fat)
+                    st.success("Portion saved to history log!")
+
+# --- TAB 3: History ---
+with tab3:
     st.markdown('<div class="sub-title">Your Logged Meals</div>', unsafe_allow_html=True)
     
     history_records = get_history()
@@ -250,6 +322,6 @@ with tab2:
                 col_d.metric("Fats", f"{fat:.0f}g")
 
         st.markdown("---")
-        if st.button("Clear All History"):
+        if st.button("Clear All History", key="clear_hist_btn"):
             clear_history()
             st.rerun()
