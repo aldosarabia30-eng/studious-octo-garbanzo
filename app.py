@@ -1,11 +1,8 @@
 import os
-import io
 import json
 import sqlite3
 import requests
-import zxingcpp
 import streamlit as st
-from PIL import Image
 from datetime import datetime
 
 st.set_page_config(page_title="MacroSnap", page_icon="⚡", layout="centered")
@@ -213,35 +210,10 @@ def fetch_usda_macros(food_name):
         pass
     return None
 
-def scan_barcode_from_image(image_bytes):
-    img = Image.open(io.BytesIO(image_bytes))
-    results = zxingcpp.read_barcodes(img)
-    if results:
-        return results[0].text
-    return None
-
-def fetch_product_by_barcode(barcode):
-    url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
-    try:
-        res = requests.get(url).json()
-        if res.get("status") == 1:
-            product = res.get("product", {})
-            nutriments = product.get("nutriments", {})
-            return {
-                "name": product.get("product_name", "Unknown Product"),
-                "calories": nutriments.get("energy-kcal_100g", 0),
-                "protein": nutriments.get("proteins_100g", 0.0),
-                "carbs": nutriments.get("carbohydrates_100g", 0.0),
-                "fat": nutriments.get("fat_100g", 0.0)
-            }
-    except Exception:
-        pass
-    return None
-
 # --- UI Header & Tabs ---
 st.markdown('<div class="main-title">MacroSnap</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs(["⚡ Log Meal", "📷 Scan Barcode", "🥘 Meal Prep", "📋 Daily History"])
+tab1, tab2, tab3 = st.tabs(["⚡ Log Meal", "🥘 Meal Prep", "📋 Daily History"])
 
 # --- TAB 1: Log Single Meal ---
 with tab1:
@@ -299,46 +271,8 @@ with tab1:
                 for line in breakdown_items:
                     st.info(line)
 
-# --- TAB 2: Scan Barcode ---
+# --- TAB 2: Batch Meal Prep ---
 with tab2:
-    st.markdown('<div class="sub-title">Snap a photo of any food package barcode</div>', unsafe_allow_html=True)
-    
-    img_file_buffer = st.camera_input("Take a picture of the barcode", key="barcode_camera")
-
-    if img_file_buffer is not None:
-        bytes_data = img_file_buffer.getvalue()
-        barcode_number = scan_barcode_from_image(bytes_data)
-
-        if barcode_number:
-            st.success(f"Barcode Detected: **{barcode_number}**")
-            
-            with st.spinner("Fetching product info..."):
-                product_info = fetch_product_by_barcode(barcode_number)
-                
-            if product_info:
-                st.markdown(f"### {product_info['name']} (per 100g)")
-                
-                cals = round(product_info['calories'])
-                prot = round(product_info['protein'], 1)
-                carb = round(product_info['carbs'], 1)
-                fat = round(product_info['fat'], 1)
-
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Calories", f"{cals}")
-                col2.metric("Protein", f"{prot:.0f}g")
-                col3.metric("Carbs", f"{carb:.0f}g")
-                col4.metric("Fats", f"{fat:.0f}g")
-
-                if st.button("Save Scanned Item to Daily Log", key="save_scanned_item"):
-                    save_meal(product_info['name'], cals, prot, carb, fat)
-                    st.success(f"Added {product_info['name']} to Daily History!")
-            else:
-                st.warning("Barcode detected, but product macros were not found in Open Food Facts database.")
-        else:
-            st.error("No clear barcode detected. Try taking the picture closer or under brighter lighting.")
-
-# --- TAB 3: Batch Meal Prep ---
-with tab3:
     st.markdown('<div class="sub-title">Calculate Batch Meal Prep & Portions</div>', unsafe_allow_html=True)
     
     prep_input = st.text_area(
@@ -436,8 +370,8 @@ with tab3:
             clear_prep_history()
             st.rerun()
 
-# --- TAB 4: Daily History ---
-with tab4:
+# --- TAB 3: Daily History ---
+with tab3:
     st.markdown('<div class="sub-title">Your Logged Meals</div>', unsafe_allow_html=True)
     
     history_records = get_history()
