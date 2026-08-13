@@ -1,4 +1,4 @@
 streamlit
 requests
-pyzbar
+zxing-cpp
 pillow
