@@ -15,7 +15,7 @@ st.markdown("""
         color: #FFFFFF;
     }
     .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 3.5rem !important; /* Pushes content safely below top header overlay */
         padding-bottom: 1.5rem !important;
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
@@ -249,7 +249,7 @@ with tab1:
                     
                     usda_data = fetch_usda_macros(name)
                     if usda_data:
-                        # Since Gemini normalizes all non-gram inputs into estimated grams, scale against USDA 100g base
+                        # Scale against USDA 100g base directly
                         multiplier = qty / 100.0
                         cals = round(usda_data["calories"] * multiplier)
                         prot = round(usda_data["protein"] * multiplier, 1)
@@ -436,3 +436,4 @@ with tab4:
         if st.button("Clear Meal Prep History", key="clear_prep_hist_btn"):
             clear_prep_history()
             st.rerun()
+    
